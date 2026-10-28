@@ -173,6 +173,24 @@ impl RendezvousServer {
         log::info!("mask: {:?}", rs.inner.mask);
         log::info!("local-ip: {:?}", rs.inner.local_ip);
         std::env::set_var("PORT_FOR_API", port.to_string());
+
+        // ===================== 入网审批网关（enrollment gate） =====================
+        // 加载审批账本，并启动内嵌审批控制台
+        crate::enroll::load();
+        let enroll_mode = get_arg_or("ENROLL_MODE", "monitor".to_owned());
+        log::info!(
+            "[enroll] mode={} controller_ips=[{}] auto_prefix=[{}]",
+            enroll_mode,
+            get_arg("ENROLL_CONTROLLER_IPS"),
+            get_arg("ENROLL_AUTO_APPROVE_PREFIX"),
+        );
+        tokio::spawn(async move {
+            if let Err(err) = crate::enroll::start_admin_server().await {
+                log::error!("[enroll] 审批台退出: {}", err);
+            }
+        });
+        // ==========================================================================
+
         rs.parse_relay_servers(&get_arg("relay-servers"));
         let mut listener = create_tcp_listener(bind_addr, port).await?;
         let mut listener2 = create_tcp_listener(bind_addr, nat_port).await?;
@@ -543,6 +561,16 @@ impl RendezvousServer {
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
+                    // ============== 入网审批门：中继请求同样受控 ==============
+                    if !crate::enroll::controller_ip_ok(&addr.ip()) {
+                        log::warn!("[enroll] 拒绝未授权控制端 {} 的中继请求 {}", addr.ip(), rf.id);
+                        return true;
+                    }
+                    if !crate::enroll::is_approved(&rf.id) {
+                        log::warn!("[enroll] 目标设备 {} 尚未审批，拒绝中继请求", rf.id);
+                        return true;
+                    }
+                    // ========================================================
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
                         let mut msg_out = RendezvousMessage::new();
                         rf.socket_addr = AddrMangle::encode(addr).into();
@@ -737,6 +765,29 @@ impl RendezvousServer {
             return Ok((msg_out, None));
         }
         let id = ph.id;
+
+        // ===================== 入网审批门：控制端 + 目标设备 =====================
+        // 1) 控制端来源 IP 限制（未配置 ENROLL_CONTROLLER_IPS 则不限制）
+        if !crate::enroll::controller_ip_ok(&addr.ip()) {
+            log::warn!("[enroll] 拒绝未授权控制端 {} 连接 {}", addr.ip(), id);
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                failure: punch_hole_response::Failure::LICENSE_MISMATCH.into(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
+        }
+        // 2) 目标设备必须已入网（enforce 模式下生效）
+        if !crate::enroll::is_approved(&id) {
+            log::warn!("[enroll] 目标设备 {} 尚未审批，拒绝会合请求", id);
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                failure: punch_hole_response::Failure::ID_NOT_EXIST.into(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
+        }
+        // =====================================================================
         // punch hole request from A, relay to B,
         // check if in same intranet first,
         // fetch local addrs if in same intranet.
