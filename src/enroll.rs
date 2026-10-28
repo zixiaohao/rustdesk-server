@@ -68,18 +68,29 @@ fn now() -> i64 {
 }
 
 /// 进程启动时加载
+/// ⚠️ 账本文件是「数组」格式（save_now 写出 Vec<Entry>），必须按数组解析。
 pub fn load() {
     let f = data_file();
     if let Ok(s) = std::fs::read_to_string(&f) {
-        if let Ok(v) = serde_json::from_str::<HashMap<String, Entry>>(&s) {
+        if let Ok(v) = serde_json::from_str::<Vec<Entry>>(&s) {
             let n = v.len();
-            *STORE.write().unwrap() = v;
+            let mut st = STORE.write().unwrap();
+            st.clear();
+            for e in v {
+                st.insert(e.id.clone(), e);
+            }
+            drop(st);
             log::info!("[enroll] loaded {} entries from {}", n, f);
             return;
         }
         log::error!("[enroll] {} 解析失败，从空账本开始", f);
     }
     log::info!("[enroll] 未发现账本，从空开始 ({})", f);
+}
+
+/// hbbs 启动自检会注册一个伪设备 ID，不进账本也不拦截
+fn ignorable(id: &str) -> bool {
+    id.contains("test_hbbs")
 }
 
 /// 限频保存：心跳路径每 30 秒最多落盘一次
@@ -148,6 +159,9 @@ pub fn touch(id: &str, ip: &str) -> Status {
     if id.is_empty() {
         return Status::Rejected;
     }
+    if ignorable(id) {
+        return Status::Approved;
+    }
     let auto = cfg("ENROLL_AUTO_APPROVE_PREFIX");
     if !auto.is_empty() && id.starts_with(&auto) {
         return Status::Approved;
@@ -192,6 +206,9 @@ pub fn allowed(id: &str, ip: &str) -> bool {
     if id.is_empty() {
         return false;
     }
+    if ignorable(id) {
+        return true;
+    }
     let auto = cfg("ENROLL_AUTO_APPROVE_PREFIX");
     if !auto.is_empty() && id.starts_with(&auto) {
         return true;
@@ -235,6 +252,9 @@ pub fn allowed(id: &str, ip: &str) -> bool {
 /// 目标设备是否已审批（用于拦截"连接已入网设备"）
 /// monitor 模式下只拦"明确被拒绝"的
 pub fn is_approved(id: &str) -> bool {
+    if ignorable(id) {
+        return true;
+    }
     let auto = cfg("ENROLL_AUTO_APPROVE_PREFIX");
     if !auto.is_empty() && id.starts_with(&auto) {
         return true;
