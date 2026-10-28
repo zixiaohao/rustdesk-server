@@ -10,8 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout
+      - name: Checkout（含子模块 libs/hbb_common）
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
