@@ -23,6 +23,13 @@ fn main() -> ResultType<()> {
         -r, --relay-servers=[HOST] 'Sets the default relay servers, separated by comma'
         -M, --rmem=[NUMBER(default={RMEM})] 'Sets UDP recv buffer size, set system rmem_max first, e.g., sudo sysctl -w net.core.rmem_max=52428800. vi /etc/sysctl.conf, net.core.rmem_max=52428800, sudo sysctl –p'
         , --mask=[MASK] '[DEPRECATED] Determine if the connection comes from LAN, e.g. 192.168.0.0/16'
+        , --enroll-mode=[MODE] 'Enrollment gate mode: monitor (default, record only) or enforce (block unapproved)'
+        , --enroll-admin-port=[PORT] 'Enrollment console port (default 21120, 0 disables it)'
+        , --enroll-admin-bind=[IP] 'Enrollment console bind IP (default 127.0.0.1)'
+        , --enroll-admin-token=[TOKEN] 'Token required by the enrollment admin API'
+        , --enroll-file=[FILE] 'Enrollment ledger file (default enroll.json)'
+        , --enroll-auto-approve-prefix=[PREFIX] 'Peer IDs starting with this prefix are auto-approved'
+        , --enroll-controller-ips=[IPS] 'Comma separated IP/CIDR allowed to act as controller'
         -k, --key=[KEY] 'Only allow the client with the same key'",
     );
     init_args(&args, "hbbs", "RustDesk ID/Rendezvous Server");
