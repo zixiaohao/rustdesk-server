@@ -392,6 +392,8 @@ impl RendezvousServer {
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
                     if !rp.id.is_empty() && rp.id.len() <= MAX_PEER_ID_LEN {
+                        // [enroll] 心跳刷新账本"最近活动"（内部限频写盘）
+                        crate::enroll::touch(&rp.id, &addr.ip().to_string());
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
                         if self.inner.serial > rp.serial {
