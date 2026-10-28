@@ -1,0 +1,40 @@
+name: build-hbbs-enroll-gate
+
+on:
+  push:
+    branches: [ enroll-gate ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: 编译 hbbs
+        run: cargo build --release --bin hbbs
+
+      - name: 冒烟测试（确认审批网关参数已编入二进制）
+        run: |
+          ./target/release/hbbs --help > hbbs-help.txt || true
+          echo "========== hbbs --help =========="
+          cat hbbs-help.txt
+          echo "================================="
+          grep -q "enroll-mode" hbbs-help.txt \
+            && echo "OK: enroll 参数已编译进二进制" \
+            || { echo "FAIL: 未找到 enroll 参数"; exit 1; }
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: hbbs-enroll-gate-linux-amd64
+          path: target/release/hbbs
+          if-no-files-found: error
