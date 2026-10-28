@@ -47,6 +47,7 @@ pub struct Entry {
 
 lazy_static! {
     static ref STORE: RwLock<HashMap<String, Entry>> = RwLock::new(HashMap::new());
+    static ref LAST_SAVE: RwLock<i64> = RwLock::new(0);
 }
 
 fn cfg(key: &str) -> String {
@@ -81,7 +82,18 @@ pub fn load() {
     log::info!("[enroll] 未发现账本，从空开始 ({})", f);
 }
 
+/// 限频保存：心跳路径每 30 秒最多落盘一次
 fn save() {
+    let n = now();
+    let last = *LAST_SAVE.read().unwrap();
+    if n - last < 30 {
+        return;
+    }
+    save_now();
+}
+
+/// 立即保存：审批 / 移除等关键动作用
+fn save_now() {
     let f = data_file();
     let v: Vec<Entry> = {
         let g = STORE.read().unwrap();
@@ -97,6 +109,7 @@ fn save() {
         }
         Err(e) => log::error!("[enroll] 序列化失败: {}", e),
     }
+    *LAST_SAVE.write().unwrap() = now();
 }
 
 // ---------------------------------------------------------------- 判定入口
@@ -253,7 +266,7 @@ pub fn set_status(id: &str, st: Status, note: &str) -> bool {
         e.status = st;
         e.note = note.to_owned();
     }
-    save();
+    save_now();
     log::info!("[enroll] {} -> {:?} ({})", id, st, note);
     true
 }
@@ -261,7 +274,7 @@ pub fn set_status(id: &str, st: Status, note: &str) -> bool {
 pub fn remove(id: &str) -> bool {
     let ok = STORE.write().unwrap().remove(id).is_some();
     if ok {
-        save();
+        save_now();
     }
     ok
 }
