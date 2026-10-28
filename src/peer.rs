@@ -116,6 +116,13 @@ impl PeerMap {
             )
         };
         if guid.is_empty() {
+            // ============ 入网审批门：新设备首次注册必须先通过审批 ============
+            // monitor 模式下只记录不拦截；enforce 模式下未审批一律拒绝
+            if !crate::enroll::allowed(&id, &addr.ip().to_string()) {
+                log::warn!("[enroll] 拒绝未审批设备注册: {} @ {}", id, addr.ip());
+                return register_pk_response::Result::SERVER_ERROR;
+            }
+            // ================================================================
             match self.db.insert_peer(&id, &uuid, &pk, &info_str).await {
                 Err(err) => {
                     log::error!("db.insert_peer failed: {}", err);
